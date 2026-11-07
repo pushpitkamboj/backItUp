@@ -29,6 +29,18 @@ services:
       postgres:
         condition: service_healthy
 
+  migrate:
+    build: .
+    env_file: .env
+    environment:
+      BACKITUP_DATABASE_URL: postgresql+psycopg://backitup:backitup@postgres:5432/backitup
+    command: alembic upgrade head
+    volumes:
+      - ./secrets:/app/secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   scheduler:
     build: .
     env_file: .env
@@ -40,6 +52,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   worker:
     build: .
@@ -53,6 +67,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   web:
     build: ./frontend
