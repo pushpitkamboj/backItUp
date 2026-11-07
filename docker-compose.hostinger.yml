@@ -1,0 +1,93 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: backitup
+      POSTGRES_USER: backitup
+      POSTGRES_PASSWORD: backitup
+    ports:
+      - "127.0.0.1:54322:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U backitup -d backitup"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      BACKITUP_DATABASE_URL: postgresql+psycopg://backitup:backitup@postgres:5432/backitup
+    command: uvicorn backitup.api:app --app-dir backend --host 0.0.0.0 --port 8000
+    ports:
+      - "127.0.0.1:8010:8000"
+    volumes:
+      - ./secrets:/app/secrets:ro
+    networks:
+      - vps_proxy
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  migrate:
+    build: .
+    env_file: .env
+    environment:
+      BACKITUP_DATABASE_URL: postgresql+psycopg://backitup:backitup@postgres:5432/backitup
+    command: alembic upgrade head
+    volumes:
+      - ./secrets:/app/secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  scheduler:
+    build: .
+    env_file: .env
+    environment:
+      BACKITUP_DATABASE_URL: postgresql+psycopg://backitup:backitup@postgres:5432/backitup
+    command: python -m backitup.scheduler
+    volumes:
+      - ./secrets:/app/secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build: .
+    env_file: .env
+    environment:
+      BACKITUP_DATABASE_URL: postgresql+psycopg://backitup:backitup@postgres:5432/backitup
+    command: python -m backitup.worker
+    volumes:
+      - ./secrets:/app/secrets:ro
+      - worker-scratch:/app/.state/work
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:5174:80"
+    networks:
+      - vps_proxy
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
+  worker-scratch:
+
+networks:
+  vps_proxy:
+    external: true
+    name: vps_proxy
