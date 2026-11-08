@@ -78,6 +78,19 @@ class Settings(BaseSettings):
     def jwks_url(self) -> str:
         return self.supabase_jwks_url or (self.supabase_public_url + "/auth/v1/.well-known/jwks.json")
 
+    def sqlalchemy_database_url(self) -> str:
+        """Return a SQLAlchemy URL using the psycopg 3 driver.
+
+        Supabase displays connection strings with the generic ``postgresql://``
+        scheme. The application ships psycopg 3, so normalize that form while
+        preserving URLs that already name a SQLAlchemy driver.
+        """
+        if self.database_url.startswith("postgres://"):
+            return "postgresql+psycopg://" + self.database_url.removeprefix("postgres://")
+        if self.database_url.startswith("postgresql://"):
+            return "postgresql+psycopg://" + self.database_url.removeprefix("postgresql://")
+        return self.database_url
+
     def managed_storage_ready(self) -> bool:
         return all((self.managed_r2_account_id, self.managed_r2_bucket, self.managed_r2_access_key_id, self.managed_r2_secret_access_key))
 

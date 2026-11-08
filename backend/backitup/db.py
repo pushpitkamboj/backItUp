@@ -9,7 +9,8 @@ from backitup.config import get_settings
 
 @lru_cache
 def factory():
-    engine = create_engine(get_settings().database_url, pool_pre_ping=True, pool_size=5, max_overflow=5)
+    settings = get_settings()
+    engine = create_engine(settings.sqlalchemy_database_url(), pool_pre_ping=True, pool_size=5, max_overflow=5)
     return sessionmaker(engine, expire_on_commit=False)
 
 
