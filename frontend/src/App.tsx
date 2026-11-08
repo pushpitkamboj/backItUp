@@ -50,12 +50,10 @@ export default function App() {
       const { data: listener } = supabase.auth.onAuthStateChange((_event, value) => { if (!disposed) setSession(value) })
       unsubscribe = () => listener.subscription.unsubscribe()
       const query = new URLSearchParams(location.search)
-      if (location.pathname === '/auth/callback' && query.has('code')) {
-        const result = await supabase.auth.exchangeCodeForSession(query.get('code')!)
-        if (result.error) setError(friendlyError(result.error))
-        history.replaceState({}, '', '/')
-      } else if (location.pathname === '/auth/confirm' && query.has('token_hash')) {
-        const result = await supabase.auth.verifyOtp({ token_hash: query.get('token_hash')!, type: 'email' })
+      if ((location.pathname === '/auth/callback' || location.pathname === '/auth/confirm') && (query.has('code') || query.has('token_hash'))) {
+        const result = query.has('code')
+          ? await supabase.auth.exchangeCodeForSession(query.get('code')!)
+          : await supabase.auth.verifyOtp({ token_hash: query.get('token_hash')!, type: query.get('type') === 'magiclink' ? 'magiclink' : 'email' })
         if (result.error) setError(friendlyError(result.error))
         history.replaceState({}, '', '/')
       }
@@ -96,6 +94,7 @@ function Dashboard({ config, client, session }: { config: Config; client: Supaba
   const [toast, setToast] = useState('')
   const [busy, setBusy] = useState(false)
   const [mobile, setMobile] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
   const [search, setSearch] = useState('')
   const token = session.access_token
   const refreshing = useRef(false)
@@ -114,6 +113,15 @@ function Dashboard({ config, client, session }: { config: Config; client: Supaba
     const response = await api<{ url: string }>(`/api/v1/github/${purpose}/connect`, token); location.assign(response.url)
   }, 'Opening GitHub authorization…')
   const nav = (next: Tab) => { setTab(next); setMobile(false); setSearch('') }
+  const openRepositories = () => {
+    if (!data) return
+    if (!data.account.recovery_email_verified) {
+      nav('settings')
+      setToast('Verify your emergency email before adding repositories.')
+      return
+    }
+    setDialog({ kind: 'repositories' })
+  }
   async function download(snapshot: Snapshot, category?: string) {
     await act(async () => {
       if (!category) {
@@ -132,8 +140,8 @@ function Dashboard({ config, client, session }: { config: Config; client: Supaba
   ]
   const source = data?.account.connections.source
   return <div className="app-shell"><a className="skip-link" href="#main">Skip to content</a><aside className={`sidebar ${mobile ? 'open' : ''}`}><div className="sidebar-brand"><Logo/><button className="mobile-only icon-button" aria-label="Close navigation" onClick={() => setMobile(false)}><X/></button></div><div className="workspace-switch"><span className="avatar">{(source?.login || session.user.email || 'Y')[0].toUpperCase()}</span><div><strong>{source?.login || 'Your workspace'}</strong><small>Personal workspace</small></div><ChevronDown size={15}/></div><div className="nav-label">WORKSPACE</div><nav aria-label="Main navigation">{navItems.map(item => <button key={item.id} className={tab === item.id ? 'selected' : ''} aria-current={tab === item.id ? 'page' : undefined} onClick={() => nav(item.id)}>{item.icon}<span>{item.title}</span>{item.id === 'repositories' && <small>{data?.repositories.length || 0}</small>}</button>)}</nav><div className="sidebar-bottom"><div className="safety-card"><ShieldCheck size={23}/><strong>Your next great idea<br/>deserves a backup.</strong><p>BackItUp Cloud keeps it<br/>ready when you need it.</p><button onClick={() => nav('storage')}>Storage & retention <ArrowUpRight size={14}/></button></div><button className="sidebar-link" onClick={() => nav('settings')}><CircleHelp size={17}/> Help & recovery access</button><button className="sidebar-link" onClick={() => { void client.auth.signOut() }}><LogOut size={17}/> Sign out</button><div className="open-source"><span/> Open source · Apache 2.0</div></div></aside>
-    <div className="main-shell"><header className="topbar"><div><button className="mobile-only icon-button" aria-label="Open navigation" onClick={() => setMobile(true)}><Menu/></button><span className="breadcrumb">Workspace <ChevronRight size={13}/> <strong>{navItems.find(n => n.id === tab)?.title}</strong></span></div><div className="topbar-right"><span className={`service-dot ${data?.overview.service_available ? '' : 'delayed'}`}><span/>{data?.overview.service_available ? 'Backup service online' : 'Service status pending'}</span><button className="icon-button notification-button" aria-label="Open notifications" onClick={() => nav('settings')}><Bell size={18}/>{data?.events.some(v => !v.read) && <i/>}</button><span className="avatar small">{(source?.login || session.user.email || 'Y')[0].toUpperCase()}</span></div></header>
-    <main id="main" className="main-content"><div className="page-heading"><div><span className="eyebrow">YOUR WORK, PROTECTED</span><h1>{({ overview: 'A little peace of mind.', repositories: 'Your repositories.', history: 'Every backup, accounted for.', recovery: 'A clear path back.', storage: 'Storage & retention.', settings: 'Your workspace, your control.' })[tab]}</h1><p>{({ overview: 'Keep an eye on your backups. Get back to building.', repositories: 'Choose what to protect and when to back it up.', history: 'Review complete snapshots, coverage, and recent attempts.', recovery: 'Restore a snapshot into a newly authorized GitHub account.', storage: 'Every backup is protected in BackItUp Cloud. You only choose its schedule and retention.', settings: 'Keep recovery access ready and review account activity.' })[tab]}</p></div>{tab === 'repositories' || tab === 'overview' ? <Button onClick={() => setDialog({ kind: 'repositories' })} disabled={!data?.account.recovery_email_verified}><Plus size={17}/> Add repositories</Button> : null}</div>
+    <div className="main-shell"><header className="topbar"><div><button className="mobile-only icon-button" aria-label="Open navigation" onClick={() => setMobile(true)}><Menu/></button><span className="breadcrumb">Workspace <ChevronRight size={13}/> <strong>{navItems.find(n => n.id === tab)?.title}</strong></span></div><div className="topbar-right"><span className={`service-dot ${data?.overview.service_available ? '' : 'delayed'}`}><span/>{data?.overview.service_available ? 'Backup service online' : 'Service status pending'}</span><button className="icon-button notification-button" aria-label="Open notifications" onClick={() => nav('settings')}><Bell size={18}/>{data?.events.some(v => !v.read) && <i/>}</button><div className="profile-menu-wrap"><button className="avatar small avatar-button" aria-label="Open profile menu" aria-expanded={profileOpen} onClick={() => setProfileOpen(value => !value)}>{(source?.login || session.user.email || 'Y')[0].toUpperCase()}</button>{profileOpen && <div className="profile-menu" role="menu"><div className="profile-menu-email">{session.user.email || 'Signed in with GitHub'}</div><button role="menuitem" onClick={() => { setProfileOpen(false); nav('settings') }}><Settings2 size={15}/> Account & activity</button><button role="menuitem" onClick={() => { setProfileOpen(false); void client.auth.signOut() }}><LogOut size={15}/> Sign out</button></div>}</div></div></header>
+    <main id="main" className="main-content"><div className="page-heading"><div><span className="eyebrow">YOUR WORK, PROTECTED</span><h1>{({ overview: 'A little peace of mind.', repositories: 'Your repositories.', history: 'Every backup, accounted for.', recovery: 'A clear path back.', storage: 'Storage & retention.', settings: 'Your workspace, your control.' })[tab]}</h1><p>{({ overview: 'Keep an eye on your backups. Get back to building.', repositories: 'Choose what to protect and when to back it up.', history: 'Review complete snapshots, coverage, and recent attempts.', recovery: 'Restore a snapshot into a newly authorized GitHub account.', storage: 'Every backup is protected in BackItUp Cloud. You only choose its schedule and retention.', settings: 'Keep recovery access ready and review account activity.' })[tab]}</p></div>{tab === 'repositories' || tab === 'overview' ? <Button onClick={openRepositories} disabled={!data || busy}><Plus size={17}/> Add repositories</Button> : null}</div>
     {error && <div className="alert error" role="alert"><XCircle size={19}/><span>{error}</span><button className="text-link" onClick={() => { void refresh() }}>Retry</button></div>}
     {!data ? <div className="panel"><Empty icon={<Loader2 className="spin"/>} title={error ? 'Workspace could not load' : 'Loading your workspace'} text={error ? 'Check your connection and retry.' : 'Checking your repositories, storage, and backup history.'}/></div> : <>
       {!data.account.recovery_email_verified && <RecoveryEmail client={client} session={session} token={token} act={act}/>}
@@ -158,7 +166,13 @@ function Dashboard({ config, client, session }: { config: Config; client: Supaba
 
 type Act = (action: () => Promise<unknown>, message: string, close?: boolean) => Promise<void>
 function RecoveryEmail({ client, session, token, act }: { client: SupabaseClient; session: Session; token: string; act: Act }) {
-  return <section className="verify-banner"><span className="verify-icon"><LockKeyhole size={22}/></span><div><strong>Keep access, even if GitHub is unavailable.</strong><p>Verify {session.user.email || 'your email'} as your emergency sign-in address before starting backups.</p></div><div className="row-actions"><Button variant="secondary small" onClick={() => { void act(async () => { const result = await client.auth.signInWithOtp({ email: session.user.email || '', options: { shouldCreateUser: false, emailRedirectTo: location.origin + '/auth/callback' } }); if (result.error) throw result.error }, 'Open the sign-in link in your email, then select Confirm email access') }}>Send verification link</Button><Button variant="small" onClick={() => { void act(() => mutate('/api/v1/account/recovery-email/verify', token), 'Emergency email sign-in verified') }}>Confirm email access</Button></div></section>
+  async function confirm() {
+    const refreshed = await client.auth.refreshSession()
+    if (refreshed.error) throw refreshed.error
+    const freshToken = refreshed.data.session?.access_token || token
+    await api('/api/v1/account/recovery-email/verify', freshToken, { method: 'POST' })
+  }
+  return <section className="verify-banner"><span className="verify-icon"><LockKeyhole size={22}/></span><div><strong>Keep access, even if GitHub is unavailable.</strong><p>Verify {session.user.email || 'your email'} as your emergency sign-in address before starting backups. Send the link, open it, then return here and confirm.</p></div><div className="row-actions"><Button variant="secondary small" onClick={() => { void act(async () => { const result = await client.auth.signInWithOtp({ email: session.user.email || '', options: { shouldCreateUser: false, emailRedirectTo: location.origin + '/auth/callback' } }); if (result.error) throw result.error }, 'Verification link sent. Open it, then return here.') }}>Send verification link</Button><Button variant="small" onClick={() => { void act(confirm, 'Emergency email sign-in verified') }}>Confirm email access</Button></div></section>
 }
 function Stat({ title, value, icon, foot }: { title: string; value: string; icon: ReactNode; foot: string }) {
   return <section className="stat-card"><div><span>{title}</span><span className="stat-icon">{icon}</span></div><strong>{value}</strong><small>{foot}</small></section>
