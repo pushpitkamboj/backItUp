@@ -26,6 +26,7 @@ services:
     volumes:
       - ./secrets:/app/secrets:ro
     networks:
+      - default
       - vps_proxy
     depends_on:
       postgres:
