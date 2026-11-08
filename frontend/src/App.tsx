@@ -50,6 +50,11 @@ export default function App() {
       const { data: listener } = supabase.auth.onAuthStateChange((_event, value) => { if (!disposed) setSession(value) })
       unsubscribe = () => listener.subscription.unsubscribe()
       const query = new URLSearchParams(location.search)
+      const connectionError = query.get('connection_error')
+      if (connectionError) {
+        setError(friendlyError({ code: connectionError }))
+        history.replaceState({}, '', '/')
+      }
       if ((location.pathname === '/auth/callback' || location.pathname === '/auth/confirm') && (query.has('code') || query.has('token_hash'))) {
         const result = query.has('code')
           ? await supabase.auth.exchangeCodeForSession(query.get('code')!)
@@ -65,7 +70,7 @@ export default function App() {
   if (!authReady) return <div className="startup"><Logo/><Loader2 className="spin"/><p>Opening your backup workspace…</p></div>
   if (!config || !client) return <div className="startup"><Logo/><div className="setup-card"><Database size={32}/><h1>{error ? 'Service unavailable' : 'Connect your authentication service'}</h1><p>{error || 'The operator needs to configure Supabase Auth and the GitHub sign-in provider before accounts can sign in.'}</p><Button onClick={() => location.reload()}><RefreshCw size={16}/> Try again</Button><a href="https://github.com/supabase/supabase" target="_blank" rel="noreferrer">Supabase setup reference <ArrowUpRight size={14}/></a></div></div>
   if (!session) return <Login client={client} initialError={error}/>
-  return <Dashboard config={config} client={client} session={session}/>
+  return <Dashboard config={config} client={client} session={session} initialError={error}/>
 }
 
 function Login({ client, initialError }: { client: SupabaseClient; initialError: string }) {
@@ -86,12 +91,12 @@ function Login({ client, initialError }: { client: SupabaseClient; initialError:
   return <div className="login"><section className="login-story"><Logo/><div><span className="eyebrow">YOUR CODE DESERVES A SAFETY NET</span><h1>Keep building.<br/>We’ve got<br/><em>your backup.</em></h1><p>Dependable GitHub backups in BackItUp Cloud.<br/>A clear path back when you need it.</p><div className="login-features"><span><ShieldCheck/> Managed private storage</span><span><History/> Complete Git history</span><span><RotateCcw/> Guided recovery</span></div></div><footer>Free, open source, and built for peace of mind.</footer></section><section className="login-form"><span className="small-pill"><span/> GITHUB BACKUP & RECOVERY</span><h2>{recovery ? 'Let’s get you back in.' : 'A safer home for your work.'}</h2><p>{recovery ? 'Use the recovery email you verified before losing access to GitHub.' : 'Connect GitHub and start your first backup in BackItUp Cloud.'}</p>{recovery ? <form onSubmit={sendEmail}><Field label="Recovery email"><input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email"/></Field><Button type="submit" disabled={busy}>{busy && <Loader2 className="spin" size={16}/>} Send sign-in link <ArrowRight size={16}/></Button><Button variant="text" onClick={() => { setRecovery(false); setMessage('') }}>Back to GitHub sign-in</Button></form> : <><Button onClick={signIn} disabled={busy}><Github size={19}/> Continue with GitHub <ArrowRight size={16}/></Button><button className="text-link" onClick={() => { setRecovery(true); setMessage('') }}>Can’t access your GitHub account?</button></>}{message && <p className="form-notice" role="status">{message}</p>}<div className="login-footnote"><LockKeyhole size={15}/><span>Backup access is read-only. You choose exactly which repositories to protect.</span></div></section></div>
 }
 
-function Dashboard({ config, client, session }: { config: Config; client: SupabaseClient; session: Session }) {
+function Dashboard({ config, client, session, initialError }: { config: Config; client: SupabaseClient; session: Session; initialError: string }) {
   const [data, setData] = useState<DashboardData | null>(null)
   const connectedPurpose = new URLSearchParams(location.search).get('connected')
   const [tab, setTab] = useState<Tab>(() => connectedPurpose === 'recovery' ? 'recovery' : connectedPurpose === 'source' ? 'repositories' : 'overview')
   const [dialog, setDialog] = useState<Dialog>(null)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(initialError)
   const [toast, setToast] = useState('')
   const [busy, setBusy] = useState(false)
   const [mobile, setMobile] = useState(false)
@@ -102,8 +107,8 @@ function Dashboard({ config, client, session }: { config: Config; client: Supaba
   const refresh = useCallback(async () => {
     if (refreshing.current) return
     refreshing.current = true
-    try { setData(await loadDashboard(token)); setError('') } catch (e) { setError(friendlyError(e)) } finally { refreshing.current = false }
-  }, [token])
+    try { setData(await loadDashboard(token)); if (!initialError) setError('') } catch (e) { setError(friendlyError(e)) } finally { refreshing.current = false }
+  }, [initialError, token])
   useEffect(() => { void refresh(); const interval = setInterval(() => { if (!document.hidden) void refresh() }, 5000); return () => clearInterval(interval) }, [refresh])
   useEffect(() => {
     if (connectedPurpose !== 'source' || !data?.account.connections.source || dialog) return
