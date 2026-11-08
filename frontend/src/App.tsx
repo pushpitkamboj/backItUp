@@ -88,7 +88,8 @@ function Login({ client, initialError }: { client: SupabaseClient; initialError:
 
 function Dashboard({ config, client, session }: { config: Config; client: SupabaseClient; session: Session }) {
   const [data, setData] = useState<DashboardData | null>(null)
-  const [tab, setTab] = useState<Tab>(() => new URLSearchParams(location.search).get('connected') === 'recovery' ? 'recovery' : 'overview')
+  const connectedPurpose = new URLSearchParams(location.search).get('connected')
+  const [tab, setTab] = useState<Tab>(() => connectedPurpose === 'recovery' ? 'recovery' : connectedPurpose === 'source' ? 'repositories' : 'overview')
   const [dialog, setDialog] = useState<Dialog>(null)
   const [error, setError] = useState('')
   const [toast, setToast] = useState('')
@@ -104,6 +105,11 @@ function Dashboard({ config, client, session }: { config: Config; client: Supaba
     try { setData(await loadDashboard(token)); setError('') } catch (e) { setError(friendlyError(e)) } finally { refreshing.current = false }
   }, [token])
   useEffect(() => { void refresh(); const interval = setInterval(() => { if (!document.hidden) void refresh() }, 5000); return () => clearInterval(interval) }, [refresh])
+  useEffect(() => {
+    if (connectedPurpose !== 'source' || !data?.account.connections.source || dialog) return
+    setDialog({ kind: 'repositories' })
+    history.replaceState({}, '', '/')
+  }, [connectedPurpose, data, dialog])
   useEffect(() => { if (!toast) return; const timeout = setTimeout(() => setToast(''), 6000); return () => clearTimeout(timeout) }, [toast])
   const act = async (action: () => Promise<unknown>, message: string, close = false) => {
     setBusy(true); setError('')
@@ -115,9 +121,8 @@ function Dashboard({ config, client, session }: { config: Config; client: Supaba
   const nav = (next: Tab) => { setTab(next); setMobile(false); setSearch('') }
   const openRepositories = () => {
     if (!data) return
-    if (!data.account.recovery_email_verified) {
-      nav('settings')
-      setToast('Verify your emergency email before adding repositories.')
+    if (!data.account.connections.source) {
+      void connect('source')
       return
     }
     setDialog({ kind: 'repositories' })
@@ -144,7 +149,7 @@ function Dashboard({ config, client, session }: { config: Config; client: Supaba
     <main id="main" className="main-content"><div className="page-heading"><div><span className="eyebrow">YOUR WORK, PROTECTED</span><h1>{({ overview: 'A little peace of mind.', repositories: 'Your repositories.', history: 'Every backup, accounted for.', recovery: 'A clear path back.', storage: 'Storage & retention.', settings: 'Your workspace, your control.' })[tab]}</h1><p>{({ overview: 'Keep an eye on your backups. Get back to building.', repositories: 'Choose what to protect and when to back it up.', history: 'Review complete snapshots, coverage, and recent attempts.', recovery: 'Restore a snapshot into a newly authorized GitHub account.', storage: 'Every backup is protected in BackItUp Cloud. You only choose its schedule and retention.', settings: 'Keep recovery access ready and review account activity.' })[tab]}</p></div>{tab === 'repositories' || tab === 'overview' ? <Button onClick={openRepositories} disabled={!data || busy}><Plus size={17}/> Add repositories</Button> : null}</div>
     {error && <div className="alert error" role="alert"><XCircle size={19}/><span>{error}</span><button className="text-link" onClick={() => { void refresh() }}>Retry</button></div>}
     {!data ? <div className="panel"><Empty icon={<Loader2 className="spin"/>} title={error ? 'Workspace could not load' : 'Loading your workspace'} text={error ? 'Check your connection and retry.' : 'Checking your repositories, storage, and backup history.'}/></div> : <>
-      {!data.account.recovery_email_verified && <RecoveryEmail client={client} session={session} token={token} act={act}/>}
+      {tab === 'recovery' && !data.account.recovery_email_verified && <RecoveryEmail client={client} session={session} token={token} act={act}/>}
       {tab === 'overview' && <><section className="overview-banner"><div className="banner-icon"><ShieldCheck size={37}/></div><div><span className="eyebrow">A SAFETY NET FOR YOUR SOURCE CODE</span><h2>{data.overview.complete_snapshots ? 'Good work is worth keeping.' : 'Your first backup starts here.'}</h2><p>{data.overview.complete_snapshots ? 'Review the last complete backup for each repository. Recovery is always a few steps away.' : 'Connect a source account and save your first backup plan.'}</p></div><button onClick={() => nav(data.repositories.length ? 'history' : 'repositories')}>{data.repositories.length ? 'View backups' : 'Set up backups'} <ArrowRight size={17}/></button><div className="banner-decoration"><Database size={115} strokeWidth={0.7}/></div></section><div className="stat-grid"><Stat title="Repositories selected" value={String(data.overview.repositories)} icon={<FolderGit2/>} foot="Explicitly selected by you"/><Stat title="Complete snapshots" value={String(data.overview.complete_snapshots)} icon={<ShieldCheck/>} foot="Published and verified"/><Stat title="Jobs in progress" value={String(data.overview.active_jobs)} icon={<Activity/>} foot="Queued and running work"/></div><div className="overview-columns"><section className="panel"><div className="panel-heading"><h2>Protected repositories <span className="count">{data.repositories.filter(r => r.last_complete).length}</span></h2><button className="text-link" onClick={() => nav('repositories')}>View all <ArrowUpRight size={14}/></button></div><RepositoryTable repositories={data.repositories.slice(0, 5)} busy={busy} configure={repo => setDialog({ kind: 'plan', repo })} backup={repo => { void act(() => mutate(`/api/v1/repositories/${repo.id}/backup`, token), 'Backup queued') }}/></section><section className="panel storage-summary"><div className="panel-heading"><h2>Storage overview</h2><Cloud size={18}/></div><div className="storage-orb"><Cloud size={36}/></div><h3>BackItUp Cloud</h3><p>Your included storage allowance</p><div className="usage-heading"><strong>{bytes(data.overview.managed_used_bytes + data.overview.managed_reserved_bytes)}</strong><span>of {bytes(data.overview.managed_limit_bytes)}</span></div><progress aria-label="Managed storage usage" max={data.overview.managed_limit_bytes} value={data.overview.managed_used_bytes + data.overview.managed_reserved_bytes}/><p className="usage-note">{data.overview.managed_reserved_bytes ? `${bytes(data.overview.managed_reserved_bytes)} reserved for uploads` : 'Backups are stored and protected by BackItUp.'}</p><Button variant="secondary full" onClick={() => nav('storage')}>Storage & retention <ArrowRight size={15}/></Button></section></div><section className="panel"><div className="panel-heading"><h2>Recent activity</h2><span className="muted small-text">Times shown in your timezone</span></div><JobList jobs={data.overview.jobs} repositories={data.repositories} token={token} act={act}/></section></>}
       {tab === 'repositories' && <><SourceConnection data={data} config={config} connect={() => { void connect('source') }} busy={busy}/><section className="panel"><div className="panel-heading"><h2>Selected repositories <span className="count">{data.repositories.length}</span></h2><label className="search"><Search size={16}/><input aria-label="Search repositories" placeholder="Find a repository…" value={search} onChange={e => setSearch(e.target.value)}/></label></div><RepositoryTable repositories={data.repositories.filter(r => `${r.owner}/${r.name}`.toLowerCase().includes(search.toLowerCase()))} busy={busy} configure={repo => setDialog({ kind: 'plan', repo })} backup={repo => { void act(() => mutate(`/api/v1/repositories/${repo.id}/backup`, token), 'Backup queued') }}/></section></>}
       {tab === 'storage' && <><div className="info-strip"><ShieldCheck size={18}/><span>Backups run on BackItUp’s servers and stay in BackItUp Cloud. You never need to connect a bucket or share storage credentials.</span></div><ManagedStorageCard available={data.storage.available} message={data.storage.message} used={data.overview.managed_used_bytes} reserved={data.overview.managed_reserved_bytes} limit={data.overview.managed_limit_bytes}/><div className="footnote-panel"><BookOpen size={21}/><div><strong>A note on storage and retention</strong><p>Each snapshot is self-contained. Choose retention in each backup plan; the latest successful backup is always kept. Disconnecting GitHub never deletes your backups.</p></div></div></>}

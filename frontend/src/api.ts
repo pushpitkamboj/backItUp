@@ -62,6 +62,7 @@ const friendlyCodes: Record<string, string> = {
   github_authorization: 'GitHub could not complete the authorization. Please try again.',
   github_revoked: 'GitHub access has expired or was revoked. Reconnect GitHub to continue.',
   github_permissions: 'GitHub denied this action. Check the app installation and permissions, then try again.',
+  github_not_connected: 'Connect your source GitHub account once, then refresh the repository list.',
   github_rate_limit: 'GitHub is temporarily rate-limiting requests. Please try again shortly.',
   managed_storage_unavailable: 'BackItUp Cloud storage is temporarily unavailable. Please try again later.',
   internal_error: 'Sorry, something broke on our side. Please try again later.',

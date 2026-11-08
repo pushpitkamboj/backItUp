@@ -208,7 +208,6 @@ def discover_repositories(workspace=Depends(current_workspace)):
 
 @app.post("/api/v1/repositories")
 def select_repository(data: SelectRepository, workspace=Depends(current_workspace), session=Depends(get_session)):
-    require_ready(workspace)
     found = next((r for r in discover(workspace.id) if r["provider_id"] == data.provider_id and r["installation_id"] == data.installation_id), None)
     if not found:
         raise BackItUpError("github_permissions", "This repository is not authorized by your GitHub installation", status=403)
@@ -252,7 +251,6 @@ def storage_status(workspace=Depends(current_workspace), session=Depends(get_ses
 
 @app.put("/api/v1/plans")
 def save_plan(data: PlanInput, workspace=Depends(current_workspace), session=Depends(get_session)):
-    require_ready(workspace)
     scoped(session, Repository, data.repository_id, workspace.id)
     profile = managed_storage_for(session, workspace)
     plan = session.scalar(select(Plan).where(Plan.repository_id == data.repository_id, Plan.workspace_id == workspace.id).with_for_update())
@@ -270,7 +268,6 @@ def save_plan(data: PlanInput, workspace=Depends(current_workspace), session=Dep
 
 @app.post("/api/v1/repositories/{repository_id}/backup", status_code=202)
 def manual_backup(repository_id: uuid.UUID, idempotency_key: str | None = Header(default=None), workspace=Depends(current_workspace), session=Depends(get_session)):
-    require_ready(workspace)
     scoped(session, Repository, repository_id, workspace.id)
     plan = session.scalar(select(Plan).where(Plan.workspace_id == workspace.id, Plan.repository_id == repository_id))
     if not plan:
