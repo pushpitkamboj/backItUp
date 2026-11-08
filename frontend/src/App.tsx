@@ -159,7 +159,7 @@ function Dashboard({ config, client, session }: { config: Config; client: Supaba
       {dialog.kind === 'repositories' && <AddRepositories token={token} selected={data.repositories} config={config} connect={() => { void connect('source') }} add={r => act(() => mutate('/api/v1/repositories', token, { provider_id: r.provider_id, installation_id: r.installation_id }), 'Repository selected')} busy={busy}/>}
       {dialog.kind === 'plan' && <PlanForm repo={dialog.repo} storageReady={data.storage.available} busy={busy} submit={value => act(() => mutate('/api/v1/plans', token, value, 'PUT'), 'Backup plan saved', true)}/>} 
       {dialog.kind === 'snapshot' && <SnapshotDetails snapshot={dialog.snapshot} download={category => { void download(dialog.snapshot, category) }}/>} 
-      {dialog.kind === 'restore' && <RestoreForm snapshot={dialog.snapshot} destination={data.account.connections.recovery?.login || ''} busy={busy} connect={() => { setDialog(null); nav('recovery') }} submit={value => act(async () => { await mutate('/api/v1/recoveries', token, value); nav('recovery') }, 'Recovery planning queued. Review and confirm the verified plan when ready.', true)}/>}
+      {dialog.kind === 'restore' && <RestoreForm snapshot={dialog.snapshot} destination={data.account.connections.recovery?.login || ''} busy={busy} connect={() => { setDialog(null); void connect('recovery') }} submit={value => act(async () => { await mutate('/api/v1/recoveries', token, value); nav('recovery') }, 'Recovery planning queued. Review and confirm the verified plan when ready.', true)}/>} 
     </Modal>}
   </div>
 }
